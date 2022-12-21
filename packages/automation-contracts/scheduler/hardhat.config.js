@@ -10,7 +10,7 @@ require("hardhat/config");
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
-module.exports = {
+const hardhatConfig = {
     solidity: {
         version: "0.8.17",
         settings: {
@@ -70,3 +70,54 @@ module.exports = {
         }
     },
 };
+
+// add superfluid supported networks
+
+const sfMetaPromise = import("@superfluid-finance/metadata");
+let sfMeta;
+
+// Returns an RPC URL for the given network.
+function getRpcUrl(n) {
+    // If set, a network specific env var is read, else construction from template is attempted, else none set
+    return process.env[`${n.uppercaseName}_RPC`] || process.env.RPC_TEMPLATE?.replace("{{NETWORK_NAME}}", n.name) || "";
+}
+
+// Returns a list of accounts for the given network
+function getAccounts(n) {
+    // in order of priority, provide an override pk or a network specific pk or a fallback pk
+    return [ process.env.OVERRIDE_PK || process.env[`${n.uppercaseName}_PK`] || process.env.DEFAULT_PK ];
+}
+
+
+(async () => {
+    sfMeta = (await sfMetaPromise).default;
+    const sfNetworks = sfMeta.networks
+        // uncomment and adapt to your needs in order to include only a subset of networks
+        //.filter(n => ["eth-goerli", "avalanche-fuji"].includes(n.name))
+        .map(n => ({
+            [n.name]: {
+                url: getRpcUrl(n),
+                accounts: getAccounts(n),
+                sfMeta: n
+            }
+        }));
+
+    //console.log("sfnetworks:", JSON.stringify(sfNetworks, null, 2));
+
+
+    console.log("HH networks PRE:", JSON.stringify(hardhatConfig.networks, null, 2));
+    // merge the dynamically created network list
+    Object.assign(hardhatConfig.networks, ...sfNetworks);
+    console.log("HH networks POST:", JSON.stringify(hardhatConfig.networks, null, 2));
+
+    module.exports = hardhatConfig;
+  }
+)()
+
+
+// hardhat task to list public networks with Superfluid deployment
+task("sf-networks", "list supported networks").setAction(
+    async (taskArgs, hre) => {
+        console.log("available networks:\n", sfMeta.networks.map(n => n.name));
+    }
+);
