@@ -2,4 +2,9 @@
 /coverage
 /.coverage_*
 /reports
-/test/output/*
+/artifacts
+/cache
+/docs/api
+/typechain-types
+/dev-scripts/**/*.d.ts
+/dev-scripts/**/*.d.ts.map

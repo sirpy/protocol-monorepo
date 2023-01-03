@@ -24,7 +24,7 @@
 	],
 	"include": [
 		"test",
-		"types/**/*", "scripts/deployContractsAndToken.ts",
+		"types/**/*",
 		"scripts"
 	]
 }

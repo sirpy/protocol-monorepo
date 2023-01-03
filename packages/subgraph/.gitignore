@@ -4,6 +4,8 @@ abis/
 yarn.lock
 package-lock.json
 subgraph.yaml
-typechain/
 tasks/config
 src/addresses.ts
+**/*.wasm
+**/*.latest.json
+tests/.bin

@@ -1,11 +1,10 @@
 const {expectRevert} = require("@openzeppelin/test-helpers");
 
-const {Web3Provider} = require("@ethersproject/providers");
 const Web3 = require("web3");
 
 const TestEnvironment = require("@superfluid-finance/ethereum-contracts/test/TestEnvironment");
-const deployTestToken = require("@superfluid-finance/ethereum-contracts/scripts/deploy-test-token");
-const deploySuperToken = require("@superfluid-finance/ethereum-contracts/scripts/deploy-super-token");
+const deployTestToken = require("@superfluid-finance/ethereum-contracts/ops-scripts/deploy-test-token");
+const deploySuperToken = require("@superfluid-finance/ethereum-contracts/ops-scripts/deploy-super-token");
 const SuperfluidSDK = require("../src");
 
 describe("Framework class", function () {
@@ -147,15 +146,6 @@ describe("Framework class", function () {
             testLoadedContracts(sf);
         });
 
-        it("with Ethers.js environment", async () => {
-            const sf = new SuperfluidSDK.Framework({
-                ethers: new Web3Provider(web3.currentProvider),
-                version: "test",
-            });
-            await sf.initialize();
-            testLoadedContracts(sf);
-        });
-
         it("Fail generating gas report without setting gas report type", async () => {
             const sf = new SuperfluidSDK.Framework({
                 isTruffle: true,
@@ -247,6 +237,19 @@ describe("Framework class", function () {
                 const sf = new SuperfluidSDK.Framework({
                     isTruffle: true,
                     tokens: ["ETH"],
+                    version: "test",
+                });
+                await sf.initialize();
+
+                assert.equal(sf.superTokens.ETHx, sf.tokens.ETHx);
+                assert.equal(sf.superTokens.ETHx.superTokenCustomType, "SETH");
+                assert.equal(await sf.superTokens.ETHx.symbol(), "ETHx");
+            });
+
+            it("use loadSuperNativeToken option", async () => {
+                const sf = new SuperfluidSDK.Framework({
+                    isTruffle: true,
+                    loadSuperNativeToken: true,
                     version: "test",
                 });
                 await sf.initialize();

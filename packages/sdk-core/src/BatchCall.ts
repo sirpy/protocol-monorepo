@@ -1,9 +1,10 @@
+import { JsonFragment } from "@ethersproject/abi";
+import { Superfluid__factory } from "@superfluid-finance/ethereum-contracts/build/typechain";
 import { ethers } from "ethers";
 
 import Host from "./Host";
-import Operation, { OperationType } from "./Operation";
+import Operation, { BatchOperationType } from "./Operation";
 import { SFError } from "./SFError";
-import SuperfluidABI from "./abi/Superfluid.json";
 import { getTransactionDescription, removeSigHashFromCallData } from "./utils";
 
 interface IBatchCallOptions {
@@ -17,9 +18,10 @@ interface OperationStruct {
     readonly data: string;
 }
 
-const operationTypeStringToTypeMap = new Map<OperationType, number>([
+const batchOperationTypeStringToTypeMap = new Map<BatchOperationType, number>([
     ["ERC20_APPROVE", 1],
     ["ERC20_TRANSFER_FROM", 2],
+    ["ERC777_SEND", 3],
     ["SUPERTOKEN_UPGRADE", 101],
     ["SUPERTOKEN_DOWNGRADE", 102],
     ["SUPERFLUID_CALL_AGREEMENT", 201],
@@ -27,7 +29,7 @@ const operationTypeStringToTypeMap = new Map<OperationType, number>([
 ]);
 
 /**
- * @dev BatchCall Helper Class
+ * BatchCall Helper Class
  * @description A helper class to create `BatchCall` objects which can be executed.
  */
 export default class BatchCall {
@@ -40,15 +42,20 @@ export default class BatchCall {
     }
 
     /**
-     * @dev Gets the call agreement function arguments.
-     * @param callData callData of the function
+     * Gets function arguments given an ABI and callData.
+     * @param abi the abi fragments of a contract/function
+     * @param callData call data of the function
      * @returns {ethers.utils.Result} call agreement function arguments
      */
-    getCallAgreementFunctionArgs = (callData: string): ethers.utils.Result =>
-        getTransactionDescription(SuperfluidABI.abi, callData).args;
+    getCallDataFunctionArgs = (
+        abi:
+            | string
+            | readonly (string | ethers.utils.Fragment | JsonFragment)[],
+        callData: string
+    ): ethers.utils.Result => getTransactionDescription(abi, callData).args;
 
     /**
-     * @dev Given an `Operation` object, gets the `OperationStruct` object.
+     * Given an `Operation` object, gets the `OperationStruct` object.
      * @param operation an `Operation` object
      * @param index the index of the `Operation` in the batchCall
      * @returns {Promise<OperationStruct>} OperationStruct object for batchCall
@@ -57,13 +64,14 @@ export default class BatchCall {
         operation: Operation,
         index: number
     ): Promise<OperationStruct> => {
-        const operationType = operationTypeStringToTypeMap.get(operation.type);
+        const batchOperationType = batchOperationTypeStringToTypeMap.get(
+            operation.type
+        );
         const populatedTransaction = await operation.populateTransactionPromise;
-        if (!operationType) {
+        if (!batchOperationType) {
             throw new SFError({
                 type: "UNSUPPORTED_OPERATION",
-                customMessage:
-                    "The operation at index " + index + " is unsupported.",
+                message: "The operation at index " + index + " is unsupported.",
             });
         }
 
@@ -71,17 +79,16 @@ export default class BatchCall {
         if (!populatedTransaction.to || !populatedTransaction.data) {
             throw new SFError({
                 type: "MISSING_TRANSACTION_PROPERTIES",
-                customMessage:
-                    "The transaction is missing the to or data property.",
+                message: "The transaction is missing the to or data property.",
             });
         }
 
-        // Handles the Superfluid Call Agreement
-        // The only operation which has a target that is not the
-        // same as the to property of the transaction.
+        const encoder = ethers.utils.defaultAbiCoder;
+
+        // Handles Superfluid.callAgreement
         if (operation.type === "SUPERFLUID_CALL_AGREEMENT") {
-            const encoder = ethers.utils.defaultAbiCoder;
-            const functionArgs = this.getCallAgreementFunctionArgs(
+            const functionArgs = this.getCallDataFunctionArgs(
+                Superfluid__factory.abi,
                 populatedTransaction.data
             );
             const data = encoder.encode(
@@ -90,22 +97,36 @@ export default class BatchCall {
             );
 
             return {
-                operationType,
+                operationType: batchOperationType,
                 target: functionArgs["agreementClass"],
                 data,
             };
         }
 
-        // Handles other cases which are not call agreeement operation
+        // Handles Superfluid.callAppAction
+        if (operation.type === "CALL_APP_ACTION") {
+            const functionArgs = this.getCallDataFunctionArgs(
+                Superfluid__factory.abi,
+                populatedTransaction.data
+            );
+
+            return {
+                operationType: batchOperationType,
+                target: functionArgs["app"],
+                data: functionArgs["callData"],
+            };
+        }
+
+        // Handles remaining ERC20/ERC777/SuperToken Operations
         return {
-            operationType,
+            operationType: batchOperationType,
             target: populatedTransaction.to,
             data: removeSigHashFromCallData(populatedTransaction.data),
         };
     };
 
     /**
-     * @dev Gets an array of `OperationStruct` objects to be passed to batchCall.
+     * Gets an array of `OperationStruct` objects to be passed to batchCall.
      * @returns {Promise<OperationStruct>[]} array of operation struct promises
      */
     get getOperationStructArrayPromises(): Promise<OperationStruct>[] {
@@ -115,53 +136,37 @@ export default class BatchCall {
     }
 
     /**
-     * @dev Executes a batch call given the operations on this class.
+     * Executes a batch call given the operations on this class.
      * @param signer the signer of the transaction
      * @returns {Promise<ethers.ContractTransaction>} ContractTransaction object
      */
     exec = async (
         signer: ethers.Signer
     ): Promise<ethers.ContractTransaction> => {
-        try {
-            const operationStructArray = await Promise.all(
-                this.getOperationStructArrayPromises
-            );
-            return await this.host.hostContract
-                .connect(signer)
-                .batchCall(operationStructArray);
-        } catch (err) {
-            throw new SFError({
-                type: "BATCH_CALL_ERROR",
-                customMessage: "There was an error executing your batch call:",
-                errorObject: err,
-            });
-        }
+        const operationStructArray = await Promise.all(
+            this.getOperationStructArrayPromises
+        );
+        return await this.host.contract
+            .connect(signer)
+            .batchCall(operationStructArray);
     };
 
     /* istanbul ignore next */
     // TODO: user signs the transaction they'd like to execute and gives
     // this data to the trusted forwarder to sign
     /**
-     * @dev Executes a forward batch call given the operations on this class.
+     * Executes a forward batch call given the operations on this class.
      * @param signer the signer of the transaction
      * @returns {Promise<ethers.ContractTransaction>} ContractTransaction object
      */
     execForward = async (
         signer: ethers.Signer
     ): Promise<ethers.ContractTransaction> => {
-        try {
-            const operationStructArray = await Promise.all(
-                this.getOperationStructArrayPromises
-            );
-            return await this.host.hostContract
-                .connect(signer)
-                .forwardBatchCall(operationStructArray);
-        } catch (err) {
-            throw new SFError({
-                type: "BATCH_CALL_ERROR",
-                customMessage: "There was an error executing your batch call:",
-                errorObject: err,
-            });
-        }
+        const operationStructArray = await Promise.all(
+            this.getOperationStructArrayPromises
+        );
+        return await this.host.contract
+            .connect(signer)
+            .forwardBatchCall(operationStructArray);
     };
 }

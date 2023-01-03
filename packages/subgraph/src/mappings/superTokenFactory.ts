@@ -8,71 +8,59 @@ import {
     SuperTokenCreatedEvent,
     SuperTokenLogicCreatedEvent,
 } from "../../generated/schema";
-import { createEventID, tokenHasValidHost } from "../utils";
+import {
+    createEventID,
+    initializeEventEntity,
+    tokenHasValidHost,
+} from "../utils";
 import { getOrInitSuperToken } from "../mappingHelpers";
 import { getHostAddress } from "../addresses";
 
 export function handleSuperTokenCreated(event: SuperTokenCreated): void {
-    let hostAddress = getHostAddress();
-    let hasValidHost = tokenHasValidHost(hostAddress, event.params.token);
+    const hostAddress = getHostAddress();
+    const hasValidHost = tokenHasValidHost(hostAddress, event.params.token);
     if (!hasValidHost) {
         return;
     }
+    const eventId = createEventID("SuperTokenCreated", event);
+    const ev = new SuperTokenCreatedEvent(eventId);
+    initializeEventEntity(ev, event, [event.params.token]);
 
-    let ev = new SuperTokenCreatedEvent(
-        createEventID("SuperTokenCreated", event)
-    );
-    ev.transactionHash = event.transaction.hash;
-    ev.timestamp = event.block.timestamp;
-    ev.name = "SuperTokenCreated";
-    ev.addresses = [event.params.token];
-    ev.blockNumber = event.block.number;
     ev.token = event.params.token;
     ev.save();
 
-    getOrInitSuperToken(event.params.token, event.block);
+    getOrInitSuperToken(event, event.params.token, "SuperTokenCreated");
 }
 
 export function handleCustomSuperTokenCreated(
     event: CustomSuperTokenCreated
 ): void {
-    let hostAddress = getHostAddress();
-    let hasValidHost = tokenHasValidHost(hostAddress, event.params.token);
+    const hostAddress = getHostAddress();
+    const hasValidHost = tokenHasValidHost(hostAddress, event.params.token);
     if (!hasValidHost) {
         return;
     }
-
-    let ev = new CustomSuperTokenCreatedEvent(
-        createEventID("CustomSuperTokenCreated", event)
-    );
-    ev.transactionHash = event.transaction.hash;
-    ev.timestamp = event.block.timestamp;
-    ev.name = "CustomSuperTokenCreated";
-    ev.addresses = [event.params.token];
-    ev.blockNumber = event.block.number;
+    const eventId = createEventID("CustomSuperTokenCreated", event);
+    const ev = new CustomSuperTokenCreatedEvent(eventId);
+    initializeEventEntity(ev, event, [event.params.token]);
     ev.token = event.params.token;
     ev.save();
 
-    getOrInitSuperToken(event.params.token, event.block);
+    getOrInitSuperToken(event, event.params.token, "CustomSuperTokenCreated");
 }
 
 export function handleSuperTokenLogicCreated(
     event: SuperTokenLogicCreated
 ): void {
-    let hostAddress = getHostAddress();
-    let hasValidHost = tokenHasValidHost(hostAddress, event.params.tokenLogic);
+    const hostAddress = getHostAddress();
+    const hasValidHost = tokenHasValidHost(hostAddress, event.params.tokenLogic);
     if (!hasValidHost) {
         return;
     }
+    const eventId = createEventID("SuperTokenLogicCreated", event);
+    const ev = new SuperTokenLogicCreatedEvent(eventId);
+    initializeEventEntity(ev, event, []);
 
-    let ev = new SuperTokenLogicCreatedEvent(
-        createEventID("SuperTokenLogicCreated", event)
-    );
-    ev.transactionHash = event.transaction.hash;
-    ev.timestamp = event.block.timestamp;
-    ev.name = "SuperTokenLogicCreated";
-    ev.addresses = [];
-    ev.blockNumber = event.block.number;
     ev.tokenLogic = event.params.tokenLogic;
     ev.save();
 }
