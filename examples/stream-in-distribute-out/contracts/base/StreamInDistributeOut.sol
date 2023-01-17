@@ -9,9 +9,15 @@ import {
     SuperAppDefinitions
 } from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperAppBase.sol";
 import {
+    SuperAppBaseFlow
+} from "../SuperAppBaseFlow.sol";
+import {
     IInstantDistributionAgreementV1,
     IDAv1Library
 } from "@superfluid-finance/ethereum-contracts/contracts/apps/IDAv1Library.sol";
+import {SuperTokenV1Library} from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperTokenV1Library.sol";
+
+import "hardhat/console.sol";
 
 // //////////////////////////////////////////////////////////////
 // ERRORS
@@ -27,7 +33,9 @@ error Unauthorized();
 /// @notice Users stream in and receive a proportional amount of shares. The shares represent a
 /// percentage of a distribution, which gets called in the `executeAction` function.
 /// @dev Inheriting contracts MUST implement `_beforeDistribution()` in inheriting contracts.
-abstract contract StreamInDistributeOut is SuperAppBase {
+abstract contract StreamInDistributeOut is SuperAppBaseFlow {
+
+    using SuperTokenV1Library for ISuperToken;
 
     // //////////////////////////////////////////////////////////////
     // EVENTS
@@ -50,14 +58,6 @@ abstract contract StreamInDistributeOut is SuperAppBase {
     /// a stream but the `executeAction` call fails.
     uint256 public lastDistribution;
 
-    /// @dev IDAv1Library for brevity.
-    using IDAv1Library for IDAv1Library.InitData;
-    IDAv1Library.InitData internal _idaLib;
-
-    /// @dev Superfluid Contracts.
-    ISuperfluid internal immutable _host;
-    IConstantFlowAgreementV1 internal immutable _cfa;
-
     /// @dev SuperToken to stream in.
     ISuperToken internal immutable _inToken;
 
@@ -71,35 +71,22 @@ abstract contract StreamInDistributeOut is SuperAppBase {
     // MODIFIERS
     // //////////////////////////////////////////////////////////////
 
-    /// @dev Checks every callback to validate inputs. MUST be called by the host.
-    /// @param token The Super Token streamed in. MUST be the in-token.
-    modifier validCallback(ISuperToken token) {
-        if (token != _inToken && token != _outToken) revert InvalidToken();
-        if (msg.sender != address(_host)) revert Unauthorized();
-        _;
-    }
-
     constructor(
         ISuperfluid host,
-        IConstantFlowAgreementV1 cfa,
-        IInstantDistributionAgreementV1 ida,
         ISuperToken inToken,
         ISuperToken outToken
+    ) SuperAppBaseFlow(
+        host,
+        SuperAppDefinitions.BEFORE_AGREEMENT_CREATED_NOOP
+        | SuperAppDefinitions.BEFORE_AGREEMENT_UPDATED_NOOP
+        | SuperAppDefinitions.BEFORE_AGREEMENT_TERMINATED_NOOP
     ) {
-        _idaLib = IDAv1Library.InitData(host, ida);
-        _host = host;
-        _cfa = cfa;
+
+        _acceptedSuperTokens[inToken] = true;
         _inToken = inToken;
         _outToken = outToken;
 
-        host.registerApp(
-            SuperAppDefinitions.APP_LEVEL_FINAL
-                | SuperAppDefinitions.BEFORE_AGREEMENT_CREATED_NOOP
-                | SuperAppDefinitions.BEFORE_AGREEMENT_UPDATED_NOOP
-                | SuperAppDefinitions.BEFORE_AGREEMENT_TERMINATED_NOOP
-        );
-
-        _idaLib.createIndex(outToken, INDEX_ID);
+        outToken.createIndex(INDEX_ID);
     }
 
     // //////////////////////////////////////////////////////////////
@@ -113,7 +100,7 @@ abstract contract StreamInDistributeOut is SuperAppBase {
 
         uint256 distributionAmount = _beforeDistribution();
 
-        _idaLib.distribute(_outToken, INDEX_ID, distributionAmount);
+        _outToken.distribute(INDEX_ID, distributionAmount);
 
         lastDistribution = block.timestamp;
 
@@ -127,9 +114,9 @@ abstract contract StreamInDistributeOut is SuperAppBase {
         if (!_shouldDistributeHax()) return ctx;
 
         uint256 distributionAmount = _beforeDistribution();
-
-        newCtx = _idaLib.distributeWithCtx(ctx, _outToken, INDEX_ID, distributionAmount);
-
+        console.log("about to distribute");
+        _outToken.distributeWithCtx(INDEX_ID, distributionAmount, ctx);
+        console.log("distributed");
         lastDistribution = block.timestamp;
 
         emit ActionExecuted(distributionAmount);
@@ -143,113 +130,82 @@ abstract contract StreamInDistributeOut is SuperAppBase {
     // SUPER APP CALLBACKS
     // //////////////////////////////////////////////////////////////
 
-    /// @dev Callback executed AFTER a stream is CREATED.
-    /// @param token Super Token being streamed in.
-    /// @param agreementClass Agreement contract address.
-    /// @param agreementId Unique stream ID for fetching the flowRate.
-    /// @param ctx Callback context.
-    function afterAgreementCreated(
-        ISuperToken token,
-        address agreementClass, 
-        bytes32 agreementId,
-        bytes calldata agreementData,
-        bytes calldata,
+    function afterFlowCreated(
+        ISuperToken superToken,
+        address sender,
+        bytes calldata /*callBackData*/,
         bytes calldata ctx
-    ) external override validCallback(token) returns (bytes memory newCtx) {
+    ) internal override returns (bytes memory newCtx) {
         // MUST NOT revert. If agreement is not explicitly CFA, return context, DO NOT update state.
         // If this reverts, then no user can approve subscriptions.
-        if (agreementClass != address(_cfa)) return ctx;
 
         newCtx = executeActionInCallback(ctx);
 
-        (address sender, ) = abi.decode(agreementData, (address, address));
+        int96 flowRate = superToken.getFlowRate(address(sender), address(this));
 
-        (,int96 flowRate,,) = _cfa.getFlowByID(token, agreementId);
-
-        return _idaLib.updateSubscriptionUnitsWithCtx(
-            newCtx,
-            _outToken,
+        return _outToken.updateSubscriptionUnitsWithCtx(
             INDEX_ID,
             sender,
-            uint128(int128(flowRate))
+            uint128(int128(flowRate)),
+            newCtx
         );
     }
 
-    /// @dev Callback executed AFTER a stream is UPADTED.
-    /// @param token Super Token being streamed in.
-    /// @param agreementClass Agreement contract address.
-    /// @param agreementId Unique stream ID for fetching the flowRate.
-    /// @param ctx Callback context.
-    function afterAgreementUpdated(
-        ISuperToken token,
-        address agreementClass,
-        bytes32 agreementId,
-        bytes calldata agreementData,
-        bytes calldata,
+    function afterFlowUpdated(
+        ISuperToken superToken,
+        address sender,
+        bytes calldata /*callBackData*/,
         bytes calldata ctx
-    ) external override validCallback(token) returns (bytes memory newCtx) {
+    ) internal override returns (bytes memory newCtx) {
         // MUST NOT revert. If agreement is not explicitly CFA, return context, DO NOT update state.
         // If this reverts, then no user can approve subscriptions.
-        if (agreementClass != address(_cfa)) return ctx;
 
         newCtx = executeActionInCallback(ctx);
 
-        (address sender, ) = abi.decode(agreementData, (address, address));
+        int96 flowRate = superToken.getFlowRate(address(sender), address(this));
+        console.log(sender);
+        console.logInt(flowRate);
+        (,, uint128 units,) = _outToken.getSubscription(address(this), INDEX_ID, address(sender));
+        console.log(units);
 
-        (,int96 flowRate,,) = _cfa.getFlowByID(token, agreementId);
-
-        return _idaLib.updateSubscriptionUnitsWithCtx(
-            ctx,
-            _outToken,
+        return _outToken.updateSubscriptionUnitsWithCtx(
             INDEX_ID,
             sender,
-            uint128(int128(flowRate))
+            uint128(int128(flowRate)),
+            newCtx
         );
+        console.log("reached end");
     }
 
-    /// @dev Callback executed BEFORE a stream is TERMINATED.
-    /// @param token Super Token being streamed in
-    /// @param agreementId Unique stream ID for fetchign the flowRate and timestamp.
-    function beforeAgreementTerminated(
-        ISuperToken token,
-        address agreementClass,
-        bytes32 agreementId,
-        bytes calldata,
-        bytes calldata
-    ) external override view returns (bytes memory) {
-        if (agreementClass != address(_cfa)) return new bytes(0);
+    function beforeFlowDeleted(
+        ISuperToken superToken,
+        address sender,
+        address /*receiver*/,
+        bytes calldata /*ctx*/
+    ) internal view override returns (bytes memory /*callbackData*/) {
 
-        (uint256 timestamp, int96 flowRate, , ) = _cfa.getFlowByID(token, agreementId);
+        (uint256 timestamp, int96 flowRate, , )  = superToken.getFlowInfo(address(sender), address(this));
 
         return abi.encode(timestamp, flowRate);
     }
 
-    /// @dev Callback executed AFTER a stream is TERMINATED. This MUST NOT revert.
-    /// @param token Super Token no longer being streamed in.
-    /// @param agreementClass Agreement contract address.
-    /// @param ctx Callback context.
-    function afterAgreementTerminated(
-        ISuperToken token,
-        address agreementClass,
-        bytes32,
-        bytes calldata agreementData,
-        bytes calldata cbdata,
+    function afterFlowDeleted(
+        ISuperToken superToken,
+        address sender,
+        address /*receiver*/,
+        bytes calldata callBackData,
         bytes calldata ctx
-    ) external override validCallback(token) returns (bytes memory) {
+    ) internal override returns (bytes memory newCtx) {
         // MUST NOT revert. If agreement is not explicitly CFA, return context, DO NOT update state.
         // If this reverts, then no user can approve subscriptions.
-        if (agreementClass != address(_cfa)) return ctx;
-
-        (address sender, ) = abi.decode(agreementData, (address, address));
 
         // Try to execute the action. On success, continue to `deleteSubscriptionWithCtx`
         try this.executeActionInCallback(ctx) returns (bytes memory newCtx) {
-            return _idaLib.deleteSubscriptionWithCtx(
-                newCtx,
-                _outToken,
+            return _outToken.deleteSubscriptionWithCtx(
                 address(this),
                 INDEX_ID,
-                sender
+                sender,
+                newCtx
             );
         } catch {
             // On failure, compute the amount streamed since the last stream update OR last
@@ -260,7 +216,7 @@ abstract contract StreamInDistributeOut is SuperAppBase {
 
             // Extract the last flowRate and timestamp before this closure using the `cbdata`
             // encoded in the `beforeAgreementTerminated` callback.
-            (, int96 flowRate) = abi.decode(cbdata, (uint256, int96));
+            (, int96 flowRate) = abi.decode(callBackData, (uint256, int96));
 
             // Compute amount owed by multiplying the number of seconds passed by the flow rate.
             uint256 amountOwed = (block.timestamp - lastDistribution) * uint256(int256(flowRate));
@@ -272,12 +228,11 @@ abstract contract StreamInDistributeOut is SuperAppBase {
             // Else, we transfer. There should be no case where this reverts, given the last check.
             else _inToken.transfer(sender, amountOwed);
 
-            return _idaLib.deleteSubscriptionWithCtx(
-                ctx,
-                _outToken,
+            return _outToken.deleteSubscriptionWithCtx(
                 address(this),
                 INDEX_ID,
-                sender
+                sender,
+                ctx
             );
         }
     }
@@ -293,7 +248,7 @@ abstract contract StreamInDistributeOut is SuperAppBase {
             ,
             uint128 approved,
             uint128 pending
-        ) = _idaLib.ida.getIndex(_outToken, address(this), INDEX_ID);
+        ) = _outToken.getIndex(address(this), INDEX_ID);
 
         return pending + approved > 0;
     }

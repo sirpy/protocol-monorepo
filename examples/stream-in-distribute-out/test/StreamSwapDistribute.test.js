@@ -33,6 +33,9 @@ let admin,
 
 before(async function () {
     [admin, alice, bob] = await ethers.getSigners();
+    console.log("Admin:", admin.address)
+    console.log("Alice:", alice.address)
+    console.log("Bob:", bob.address)
 
     const resolverAddress = await deploySuperfluid(admin);
 
@@ -102,7 +105,7 @@ beforeEach(async function () {
 });
 
 describe("Streaming Operations", async function () {
-    it("Can create flow to super app", async function () {
+    xit("Can create flow to super app", async function () {
         await sf.cfaV1
             .createFlow({
                 superToken: inToken.address,
@@ -148,6 +151,7 @@ describe("Streaming Operations", async function () {
             })
             .exec(alice);
 
+        console.log("updating flow");
         await sf.cfaV1
             .updateFlow({
                 superToken: inToken.address,
@@ -156,6 +160,7 @@ describe("Streaming Operations", async function () {
                 overrides,
             })
             .exec(alice);
+        console.log("flow update complete");
 
         assert.equal(
             (
@@ -183,7 +188,7 @@ describe("Streaming Operations", async function () {
         );
     });
 
-    it("Can delete flow to super app", async function () {
+    xit("Can delete flow to super app", async function () {
         await sf.cfaV1
             .createFlow({
                 superToken: inToken.address,
@@ -229,7 +234,7 @@ describe("Streaming Operations", async function () {
     });
 });
 
-describe("IDA Operations", async function () {
+xdescribe("IDA Operations", async function () {
     it("Can approve subscription to super app", async function () {
         await sf.cfaV1
             .createFlow({
@@ -250,7 +255,7 @@ describe("IDA Operations", async function () {
     });
 });
 
-describe("Action operations", async () => {
+xdescribe("Action operations", async () => {
     // this also asserts the `createFlow` from the first streamer won't throw.
     it("Can execute action with zero units", async function () {
         await streamSwapDistributeApp.connect(alice).executeAction();

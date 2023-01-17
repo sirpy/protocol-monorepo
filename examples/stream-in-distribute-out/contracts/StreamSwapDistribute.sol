@@ -24,7 +24,7 @@ contract StreamSwapDistribute is StreamInDistributeOut {
         ISuperToken inToken,
         ISuperToken outToken,
         IUniswapV2Router02 router
-    ) StreamInDistributeOut(host, cfa, ida, inToken, outToken) {
+    ) StreamInDistributeOut(host, inToken, outToken) {
         _router = router;
 
         // approve router to transfer the underlying `inToken` on behalf of this contract
