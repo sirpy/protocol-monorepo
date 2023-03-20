@@ -26,6 +26,30 @@ jobs:
       subgraph-release: v1
       subgraph-endpoint: ''
       run-coverage-tests: false
+  
+  test-subgraph-is-fully-indexed:
+    runs-on: ubuntu-latest
+    name: Test Subgraph is Fully Indexed on V1 Endpoints
+    steps: 
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js 18.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          registry-url: https://registry.npmjs.org/
+
+      - name: Install packages
+        run: |
+          yarn install --frozen-lockfile
+      
+      - name: Check Indexing completeness
+        run: |
+          yarn check-indexing-completeness
+        
+        working-directory: ./packages/subgraph
+    env:
+      SUBGRAPH_RELEASE_TAG: v1
 
   create-release-draft:
     name: Create Release Draft

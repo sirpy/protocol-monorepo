@@ -16,6 +16,9 @@ interface IndexingStatus {
     readonly synced: boolean;
 }
 
+const RELEASE_TAG = process.env.SUBGRAPH_RELEASE_TAG;
+const SUPPORTED_RELEASE_TAGS = ["v1", "dev", "feature"];
+
 const pendingIndexingStatusQuery = (subgraphName: string) =>
     `{
     response: indexingStatusForPendingVersion(subgraphName: "${subgraphName}") {
@@ -68,10 +71,7 @@ const subgraphRequest = async <T>(query: string): Promise<T> => {
 };
 const executeIndexingStatusQuery = async (networkName: string) => {
     const subgraphName =
-        "superfluid-finance/protocol-" +
-        process.env.SUBGRAPH_RELEASE_TAG +
-        "-" +
-        networkName;
+        "superfluid-finance/protocol-" + RELEASE_TAG + "-" + networkName;
     const query = pendingIndexingStatusQuery(subgraphName);
     const data = await subgraphRequest<{ response: IndexingStatus }>(query);
     if (data.response != null) {
@@ -81,13 +81,20 @@ const executeIndexingStatusQuery = async (networkName: string) => {
 };
 
 const main = async () => {
+    if (!RELEASE_TAG || !SUPPORTED_RELEASE_TAGS.includes(RELEASE_TAG))
+        throw new Error(
+            `${RELEASE_TAG} is an unsupported release tag, please use one of the supported tags: ${SUPPORTED_RELEASE_TAGS.join(
+                ", "
+            )}`
+        );
+
     const networkNames = getNetworkNames();
     const promises = networkNames.map((x) => executeIndexingStatusQuery(x));
     const resolvedPromises = await Promise.all(promises);
     if (resolvedPromises.some((x) => x != null)) {
         console.log(
             "There are still subgraphs that are indexing for the following",
-            process.env.SUBGRAPH_RELEASE_TAG,
+            RELEASE_TAG,
             "release endpoint(s):"
         );
         for (let i = 0; i < resolvedPromises.length; i++) {
@@ -96,9 +103,13 @@ const main = async () => {
                 console.log("-", resolvedPromise.subgraphName, "\n");
             }
         }
-        throw new Error("Indexing not complete for all networks - cannot release SDK-Core yet.");
+        throw new Error(
+            "Indexing not complete for all networks - cannot release SDK-Core yet."
+        );
     }
-    console.log("Indexing Complete on All Networks - SDK-Core release can proceed");
+    console.log(
+        "Indexing Complete on All Networks - SDK-Core release can proceed"
+    );
 };
 
 main()
