@@ -1,5 +1,5 @@
 const SuperfluidSDK = require("@superfluid-finance/js-sdk");
-
+const ethers = require("hardhat").ethers;
 const {
     getScriptRunnerFactory: S,
     ZERO_ADDRESS,
@@ -34,7 +34,7 @@ module.exports = eval(`(${S.toString()})()`)(async function (
     options = {}
 ) {
     console.log("======== Deploying super token ========");
-    let {resetToken, protocolReleaseVersion} = options;
+    let {resetToken, protocolReleaseVersion, nftContracts} = options;
 
     if (args.length !== 1) {
         throw new Error("Wrong number of arguments");
@@ -140,7 +140,22 @@ module.exports = eval(`(${S.toString()})()`)(async function (
             );
             superTokenKey = `supertokens.${protocolReleaseVersion}.${tokenSymbol}x`;
             deploymentFn = async () => {
-                return await sf.createERC20Wrapper(tokenInfo);
+                console.log("Deploying TestSuperGD...", sf.host.address);
+
+                const supergd = await (
+                    await ethers.getContractFactory("TestSuperGD")
+                ).deploy(
+                    tokenInfoName,
+                    tokenInfoSymbol,
+                    tokenInfoDecimals.toString(),
+                    sf.host.address,
+                    tokenAddress,
+                    nftContracts.constantOutflowNFTLogic,
+                    nftContracts.constantInflowNFTLogic
+                );
+                console.log("Supergd Deployed:", supergd.address);
+                return supergd;
+                // return await sf.createERC20Wrapper(tokenInfo);
             };
         }
     }

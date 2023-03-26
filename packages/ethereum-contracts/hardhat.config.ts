@@ -77,6 +77,14 @@ const config: HardhatUserConfig = {
         },
     },
     networks: {
+        hardhat: {
+            hardfork: "merge",
+            allowUnlimitedContractSize: true
+        },
+        localhost: {
+            ...createNetworkConfig("localhost"),
+            url: "http://0.0.0.0:8545/",
+        },
         "bsc-mainnet": {
             ...createNetworkConfig("bsc-mainnet"),
             url: process.env.BSC_PROVIDER_URL || "",
