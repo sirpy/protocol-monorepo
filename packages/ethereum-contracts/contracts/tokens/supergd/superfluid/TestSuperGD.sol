@@ -102,4 +102,30 @@ contract TestSuperGD is SuperGoodDollar {
         // set requireReceptionAck to true always
         _mint(msg.sender, to, amount, true, userData, operatorData);
     }
+
+    /**
+     * @notice Links the NFT contracts to the SuperToken.
+     * @dev This is only to be used in testing as the NFT contracts are linked in initialize.
+     * @param constantOutflowNFTAddress constant outflow nft proxy contract address
+     * @param constantInflowNFTAddress constant inflow nft proxy contract address
+     * @param poolAdminNFTAddress pool admin nft proxy contract address
+     * @param poolMemberNFTAddress pool member nft proxy contract address
+     */
+    function setNFTProxyContracts(
+        address constantOutflowNFTAddress,
+        address constantInflowNFTAddress,
+        address poolAdminNFTAddress,
+        address poolMemberNFTAddress
+    ) external {
+        _onlyOwner();
+
+        constantOutflowNFT = IConstantOutflowNFT(constantOutflowNFTAddress);
+        constantInflowNFT = IConstantInflowNFT(constantInflowNFTAddress);
+        poolAdminNFT = IPoolAdminNFT(poolAdminNFTAddress);
+        poolMemberNFT = IPoolMemberNFT(poolMemberNFTAddress);
+    }
+
+    function getUnderlyingToken() external view returns (address) {
+        return address(_underlyingToken);
+    }
 }

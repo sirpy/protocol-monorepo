@@ -150,8 +150,8 @@ module.exports = eval(`(${S.toString()})()`)(async function (
                     tokenInfoDecimals.toString(),
                     sf.host.address,
                     tokenAddress,
-                    nftContracts.constantOutflowNFTLogic,
-                    nftContracts.constantInflowNFTLogic
+                    nftContracts?.constantOutflowNFTLogic || ethers.constants.AddressZero,
+                    nftContracts?.constantInflowNFTLogic || ethers.constants.AddressZero
                 );
                 console.log("Supergd Deployed:", supergd.address);
                 return supergd;

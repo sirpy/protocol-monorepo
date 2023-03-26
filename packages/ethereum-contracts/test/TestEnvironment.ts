@@ -307,6 +307,10 @@ export default class TestEnvironment {
             )),
         ]);
         this.agreementHelper = new AgreementHelper(this);
+        const nftContracts = await this.deployNFTContracts()
+
+        const {testToken, superToken} = await this.getAndSetTestTokenAndSuperTokenMock("TEST");
+        await superToken.setNFTProxyContracts(nftContracts.constantOutflowNFTLogic.address, nftContracts.constantInflowNFTLogic.address, ethers.constants.AddressZero, ethers.constants.AddressZero)
     }
 
     /*
@@ -421,7 +425,7 @@ export default class TestEnvironment {
             isTruffle: isTruffle,
             web3,
         });
-        const nftContracts = await this.deployNFTContracts()
+        const nftContracts = this.contracts?.cfa?.address &&  await this.deployNFTContracts()
         await deploySuperToken(this.createErrorHandler(), [":", tokenSymbol], {
             isTruffle: isTruffle,
             web3,
